@@ -22,7 +22,15 @@ export default function App() {
           <ambientLight intensity={0.5} />
           <directionalLight position={[10, 10, 5]} intensity={1} />
           <gridHelper args={[10, 10]} />
-          <mesh position={[0, 5, 0]} scale={[5, 10, 5]} wireframe>
+          {/* Front wall grid */}
+          <gridHelper args={[10, 10]} position={[0, 5, 5]} rotation={[Math.PI/2, 0, 0]} />
+          {/* Back wall grid */}
+          <gridHelper args={[10, 10]} position={[0, 5, -5]} rotation={[Math.PI/2, 0, 0]} />
+          {/* Left wall grid */}
+          <gridHelper args={[10, 10]} position={[-5, 5, 0]} rotation={[0, 0, Math.PI/2]} />
+          {/* Right wall grid */}
+          <gridHelper args={[10, 10]} position={[5, 5, 0]} rotation={[0, 0, Math.PI/2]} />
+          <mesh position={[0, 5, 0]} scale={[10, 10, 10]} wireframe>
             <boxGeometry />
             <meshStandardMaterial color="white" opacity={0.2} transparent />
           </mesh>
