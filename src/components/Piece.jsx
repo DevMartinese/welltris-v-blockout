@@ -1,100 +1,179 @@
 import { useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useKeyboardControls } from '@react-three/drei'
-import { Vector3 } from 'three'
+import * as THREE from 'three'
 
-// Definición básica de una pieza en L
-const PIECE_L = [
-  [0, 0, 0],
-  [0, -1, 0],
-  [0, -2, 0],
-  [1, -2, 0],
-]
+// Definición de piezas con sus colores
+const PIECES = {
+  L: {
+    shape: [
+      [0, 0, 0],
+      [0, -1, 0],
+      [0, -2, 0],
+      [1, -2, 0],
+    ],
+    color: '#00BCD4'
+  },
+  I: {
+    shape: [
+      [0, 0, 0],
+      [0, -1, 0],
+      [0, -2, 0],
+      [0, -3, 0],
+    ],
+    color: '#FF5722'
+  },
+  O: {
+    shape: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [0, -1, 0],
+      [1, -1, 0],
+    ],
+    color: '#FFEB3B'
+  },
+  T: {
+    shape: [
+      [0, 0, 0],
+      [-1, -1, 0],
+      [0, -1, 0],
+      [1, -1, 0],
+    ],
+    color: '#9C27B0'
+  }
+}
 
-export function Piece({ onLock, gameLogic }) {
-  const position = useRef(new Vector3(0, 8, 0))
-  const [locked, setLocked] = useState(false)
+export function Piece() {
+  const [lockedPieces, setLockedPieces] = useState([])
+  const [currentPiece, setCurrentPiece] = useState(null)
+  const groupRef = useRef()
   
-  // Referencias para el tiempo
-  const lastDrop = useRef(0)
-  const lastMove = useRef(0)
-  const dropInterval = useRef(1000) // 1 segundo entre caídas
-  const moveInterval = 100 // 100ms entre movimientos
-  
-  // Velocidad de movimiento
-  const moveAmount = 1 // Mover una unidad completa
+  // Hook de controles fuera de useFrame
+  const [, getKeys] = useKeyboardControls()
 
-  // Obtener el estado de los controles
-  const [subscribeKeys, getKeys] = useKeyboardControls()
-
-  useFrame((state) => {
-    if (locked) return
-
-    const now = state.clock.getElapsedTime() * 1000
-    const keys = getKeys()
-    let moved = false
-
-    // Manejar movimientos horizontales cada 100ms
-    if (now - lastMove.current >= moveInterval) {
-      const newPos = position.current.clone()
-
-      if (keys.left) {
-        newPos.x = Math.max(-2, position.current.x - moveAmount)
-        moved = true
-      } else if (keys.right) {
-        newPos.x = Math.min(2, position.current.x + moveAmount)
-        moved = true
-      } else if (keys.forward) {
-        newPos.z = Math.max(-2, position.current.z - moveAmount)
-        moved = true
-      } else if (keys.backward) {
-        newPos.z = Math.min(2, position.current.z + moveAmount)
-        moved = true
-      }
-
-      if (moved && gameLogic.canPieceMove(PIECE_L, newPos)) {
-        position.current.copy(newPos)
-        lastMove.current = now
-      }
+  // Crear una nueva pieza aleatoria
+  const createRandomPiece = () => {
+    const pieces = Object.entries(PIECES)
+    const [type, config] = pieces[Math.floor(Math.random() * pieces.length)]
+    return {
+      type,
+      ...config,
+      position: new THREE.Vector3(0, 8, 0),
+      rotation: new THREE.Euler(0, 0, 0)
     }
+  }
 
-    // Manejar caída
-    const timeSinceLastDrop = now - lastDrop.current
-    dropInterval.current = keys.fastDrop ? 100 : 1000 // 100ms para caída rápida
+  // Verificar colisiones
+  const checkCollision = (position) => {
+    const boardSize = 5 // Mitad del tamaño del tablero
+    
+    if (!currentPiece) return false
 
-    if (timeSinceLastDrop >= dropInterval.current) {
-      const newPos = position.current.clone()
-      newPos.y -= 1
-
-      if (gameLogic.canPieceMove(PIECE_L, newPos)) {
-        position.current.copy(newPos)
-      } else {
-        // Si no puede moverse hacia abajo, fijar la pieza
-        const finalPos = position.current.clone()
-        finalPos.x = Math.round(finalPos.x)
-        finalPos.y = Math.floor(finalPos.y)
-        finalPos.z = Math.round(finalPos.z)
-        
-        gameLogic.lockPiece(PIECE_L, finalPos)
-        setLocked(true)
-        if (onLock) onLock()
+    for (const [x, y, z] of currentPiece.shape) {
+      const worldPos = new THREE.Vector3(
+        position.x + x,
+        position.y + y,
+        position.z + z
+      )
+      
+      // Verificar límites
+      if (worldPos.x < -boardSize || worldPos.x > boardSize ||
+          worldPos.y < 0 ||
+          worldPos.z < -boardSize || worldPos.z > boardSize) {
+        return true
       }
       
-      lastDrop.current = now
+      // Verificar colisión con piezas bloqueadas
+      for (const locked of lockedPieces) {
+        for (const [lx, ly, lz] of locked.shape) {
+          const lockedPos = new THREE.Vector3(
+            locked.position.x + lx,
+            locked.position.y + ly,
+            locked.position.z + lz
+          )
+          if (worldPos.distanceTo(lockedPos) < 0.5) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
+  // Inicializar la primera pieza
+  if (!currentPiece) {
+    setCurrentPiece(createRandomPiece())
+  }
+
+  useFrame((state, delta) => {
+    if (!currentPiece || !groupRef.current) return
+
+    const keys = getKeys()
+    const moveSpeed = 5 * delta
+    const rotateSpeed = Math.PI * delta
+
+    const newPosition = groupRef.current.position.clone()
+    const newRotation = groupRef.current.rotation.clone()
+
+    // Movimiento
+    if (keys.left) newPosition.x -= moveSpeed
+    if (keys.right) newPosition.x += moveSpeed
+    if (keys.forward) newPosition.z -= moveSpeed
+    if (keys.backward) newPosition.z += moveSpeed
+    
+    // Rotación
+    if (keys.rotateLeft) newRotation.y += rotateSpeed
+    if (keys.rotateRight) newRotation.y -= rotateSpeed
+
+    // Caída constante
+    newPosition.y -= delta * 2 // Velocidad base de caída
+    if (keys.fastDrop) newPosition.y -= delta * 8 // Caída rápida
+
+    // Verificar colisiones antes de aplicar el movimiento
+    if (!checkCollision(newPosition)) {
+      groupRef.current.position.copy(newPosition)
+      groupRef.current.rotation.copy(newRotation)
+    } else if (newPosition.y !== groupRef.current.position.y) {
+      // Si hay colisión vertical, bloquear la pieza y crear una nueva
+      setLockedPieces(prev => [...prev, {
+        ...currentPiece,
+        position: groupRef.current.position.clone(),
+        rotation: groupRef.current.rotation.clone()
+      }])
+      
+      setCurrentPiece(createRandomPiece())
     }
   })
 
-  if (locked) return null
-
-  // Renderizar cada cubo que forma la pieza
   return (
-    <group position={position.current}>
-      {PIECE_L.map((coords, index) => (
-        <mesh key={index} position={[coords[0], coords[1], coords[2]]}>
-          <boxGeometry args={[0.9, 0.9, 0.9]} />
-          <meshStandardMaterial color="cyan" />
-        </mesh>
+    <>
+      {/* Renderizar piezas bloqueadas */}
+      {lockedPieces.map((piece, index) => (
+        <group key={index} position={piece.position} rotation={piece.rotation}>
+          {piece.shape.map((coords, blockIndex) => (
+            <mesh key={blockIndex} position={coords}>
+              <boxGeometry args={[0.9, 0.9, 0.9]} />
+              <meshStandardMaterial color={piece.color} />
+            </mesh>
+          ))}
+        </group>
       ))}
-    </group>
+      
+      {/* Renderizar pieza actual */}
+      {currentPiece && (
+        <group 
+          ref={groupRef}
+          position={currentPiece.position}
+          rotation={currentPiece.rotation}
+        >
+          {currentPiece.shape.map((coords, index) => (
+            <mesh key={index} position={coords}>
+              <boxGeometry args={[0.9, 0.9, 0.9]} />
+              <meshStandardMaterial color={currentPiece.color} />
+            </mesh>
+          ))}
+        </group>
+      )}
+    </>
   )
 }
