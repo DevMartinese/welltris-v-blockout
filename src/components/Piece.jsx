@@ -65,33 +65,53 @@ export function Piece() {
 
   // Verificar colisiones
   const checkCollision = (position) => {
-    const boardSize = 5 // Mitad del tamaño del tablero
+    const boardSize = 4.5 // Ajustado para considerar el tamaño de los bloques
     
     if (!currentPiece) return false
 
+    // Convertir la posición de la pieza actual considerando la rotación
+    const matrix = new THREE.Matrix4()
+    matrix.makeRotationFromEuler(groupRef.current.rotation)
+
     for (const [x, y, z] of currentPiece.shape) {
+      // Aplicar rotación al bloque
+      const rotatedPoint = new THREE.Vector3(x, y, z)
+      rotatedPoint.applyMatrix4(matrix)
+
       const worldPos = new THREE.Vector3(
-        position.x + x,
-        position.y + y,
-        position.z + z
+        position.x + rotatedPoint.x,
+        position.y + rotatedPoint.y,
+        position.z + rotatedPoint.z
       )
       
-      // Verificar límites
-      if (worldPos.x < -boardSize || worldPos.x > boardSize ||
-          worldPos.y < 0 ||
-          worldPos.z < -boardSize || worldPos.z > boardSize) {
+      // Verificar límites considerando el tamaño del bloque
+      const halfSize = 0.5 // Mitad del tamaño del bloque
+      if (worldPos.x - halfSize < -boardSize || worldPos.x + halfSize > boardSize ||
+          worldPos.y - halfSize < 0 ||
+          worldPos.z - halfSize < -boardSize || worldPos.z + halfSize > boardSize) {
         return true
       }
       
       // Verificar colisión con piezas bloqueadas
       for (const locked of lockedPieces) {
+        const lockedMatrix = new THREE.Matrix4()
+        lockedMatrix.makeRotationFromEuler(locked.rotation)
+
         for (const [lx, ly, lz] of locked.shape) {
+          // Aplicar rotación al bloque bloqueado
+          const rotatedLockedPoint = new THREE.Vector3(lx, ly, lz)
+          rotatedLockedPoint.applyMatrix4(lockedMatrix)
+
           const lockedPos = new THREE.Vector3(
-            locked.position.x + lx,
-            locked.position.y + ly,
-            locked.position.z + lz
+            locked.position.x + rotatedLockedPoint.x,
+            locked.position.y + rotatedLockedPoint.y,
+            locked.position.z + rotatedLockedPoint.z
           )
-          if (worldPos.distanceTo(lockedPos) < 0.5) {
+
+          // Usar una distancia más precisa para la colisión
+          if (Math.abs(worldPos.x - lockedPos.x) < 0.95 &&
+              Math.abs(worldPos.y - lockedPos.y) < 0.95 &&
+              Math.abs(worldPos.z - lockedPos.z) < 0.95) {
             return true
           }
         }
@@ -133,15 +153,23 @@ export function Piece() {
     if (!checkCollision(newPosition)) {
       groupRef.current.position.copy(newPosition)
       groupRef.current.rotation.copy(newRotation)
-    } else if (newPosition.y !== groupRef.current.position.y) {
-      // Si hay colisión vertical, bloquear la pieza y crear una nueva
-      setLockedPieces(prev => [...prev, {
-        ...currentPiece,
-        position: groupRef.current.position.clone(),
-        rotation: groupRef.current.rotation.clone()
-      }])
-      
-      setCurrentPiece(createRandomPiece())
+    } else {
+      // Si hay colisión
+      if (newPosition.y !== groupRef.current.position.y) {
+        // Si la colisión es vertical (eje Y), bloquear la pieza y crear una nueva
+        setLockedPieces(prev => [...prev, {
+          ...currentPiece,
+          position: groupRef.current.position.clone(),
+          rotation: groupRef.current.rotation.clone()
+        }])
+        setCurrentPiece(createRandomPiece())
+      } else {
+        // Si la colisión es horizontal, mantener la posición anterior
+        newPosition.x = groupRef.current.position.x
+        newPosition.z = groupRef.current.position.z
+        groupRef.current.position.copy(newPosition)
+        groupRef.current.rotation.copy(newRotation)
+      }
     }
   })
 
@@ -152,7 +180,7 @@ export function Piece() {
         <group key={index} position={piece.position} rotation={piece.rotation}>
           {piece.shape.map((coords, blockIndex) => (
             <mesh key={blockIndex} position={coords}>
-              <boxGeometry args={[0.9, 0.9, 0.9]} />
+              <boxGeometry args={[1, 1, 1]} />
               <meshStandardMaterial color={piece.color} />
             </mesh>
           ))}
@@ -168,7 +196,7 @@ export function Piece() {
         >
           {currentPiece.shape.map((coords, index) => (
             <mesh key={index} position={coords}>
-              <boxGeometry args={[0.9, 0.9, 0.9]} />
+              <boxGeometry args={[1, 1, 1]} />
               <meshStandardMaterial color={currentPiece.color} />
             </mesh>
           ))}

@@ -21,16 +21,16 @@ export default function App() {
           <OrbitControls />
           <ambientLight intensity={0.5} />
           <directionalLight position={[10, 10, 5]} intensity={1} />
-          <gridHelper args={[10, 10]} />
+          <gridHelper args={[9, 9]} />
           {/* Front wall grid */}
-          <gridHelper args={[10, 10]} position={[0, 5, 5]} rotation={[Math.PI/2, 0, 0]} />
+          <gridHelper args={[9, 9]} position={[0, 4.5, 4.5]} rotation={[Math.PI/2, 0, 0]} />
           {/* Back wall grid */}
-          <gridHelper args={[10, 10]} position={[0, 5, -5]} rotation={[Math.PI/2, 0, 0]} />
+          <gridHelper args={[9, 9]} position={[0, 4.5, -4.5]} rotation={[Math.PI/2, 0, 0]} />
           {/* Left wall grid */}
-          <gridHelper args={[10, 10]} position={[-5, 5, 0]} rotation={[0, 0, Math.PI/2]} />
+          <gridHelper args={[9, 9]} position={[-4.5, 4.5, 0]} rotation={[0, 0, Math.PI/2]} />
           {/* Right wall grid */}
-          <gridHelper args={[10, 10]} position={[5, 5, 0]} rotation={[0, 0, Math.PI/2]} />
-          <mesh position={[0, 5, 0]} scale={[10, 10, 10]} wireframe>
+          <gridHelper args={[9, 9]} position={[4.5, 4.5, 0]} rotation={[0, 0, Math.PI/2]} />
+          <mesh position={[0, 4.5, 0]} scale={[9, 9, 9]} wireframe>
             <boxGeometry />
             <meshStandardMaterial color="white" opacity={0.2} transparent />
           </mesh>
