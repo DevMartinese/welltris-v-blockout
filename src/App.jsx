@@ -1,6 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { KeyboardControls, OrbitControls } from '@react-three/drei'
 import { Piece } from './components/Piece'
+import { Piece2 } from './components/Piece2'
 import './App.css'
 
 export default function App() {
