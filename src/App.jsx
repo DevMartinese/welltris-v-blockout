@@ -35,7 +35,7 @@ export default function App() {
             <boxGeometry />
             <meshStandardMaterial color="white" opacity={0.2} transparent />
           </mesh>
-          <Piece />
+          <Piece2 />
         </Canvas>
       </KeyboardControls>
     </div>

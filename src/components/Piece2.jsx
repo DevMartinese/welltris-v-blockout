@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useKeyboardControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -52,22 +52,26 @@ const WALLS = {
 }
 
 export function Piece2() {
-  const [lockedPieces, setLockedPieces] = useState([])
-  const [currentPiece, setCurrentPiece] = useState(null)
-  const [currentWall, setCurrentWall] = useState(WALLS.FRONT)
+  const [gameState, setGameState] = useState({
+    lockedPieces: [],
+    currentPiece: null,
+    currentWall: WALLS.FRONT,
+    isLocked: false,
+    bendAngle: 0, // Ángulo de doblado de la pieza
+    bendAxis: new THREE.Vector3(1, 0, 0) // Eje de doblado
+  })
   const groupRef = useRef()
-  const isCollidingRef = useRef(false)
   
   const [, getKeys] = useKeyboardControls()
 
   // Crear una nueva pieza aleatoria
-  const createRandomPiece = () => {
+  const createRandomPiece = (wall) => {
     const pieces = Object.entries(PIECES)
     const [type, config] = pieces[Math.floor(Math.random() * pieces.length)]
     
     // La posición inicial dependerá de la pared actual
     let position, rotation
-    switch(currentWall) {
+    switch(wall) {
       case WALLS.FRONT:
         position = new THREE.Vector3(0, 8, 4.5)
         rotation = new THREE.Euler(0, 0, 0)
@@ -91,19 +95,19 @@ export function Piece2() {
       ...config,
       position,
       rotation,
-      wall: currentWall
+      wall
     }
   }
 
   // Verificar colisiones
   const checkCollision = (position) => {
-    if (!currentPiece) return false
+    if (!gameState.currentPiece) return false
 
     const boardSize = 4.5
     const matrix = new THREE.Matrix4()
     matrix.makeRotationFromEuler(groupRef.current.rotation)
 
-    for (const [x, y, z] of currentPiece.shape) {
+    for (const [x, y, z] of gameState.currentPiece.shape) {
       const rotatedPoint = new THREE.Vector3(x, y, z)
       rotatedPoint.applyMatrix4(matrix)
 
@@ -116,7 +120,7 @@ export function Piece2() {
       const halfSize = 0.5
       
       // Ajustar límites según la pared actual
-      switch(currentWall) {
+      switch(gameState.currentWall) {
         case WALLS.FRONT:
           if (worldPos.x < -boardSize || worldPos.x > boardSize ||
               worldPos.y < 0 ||
@@ -140,7 +144,7 @@ export function Piece2() {
       }
 
       // Verificar colisión con piezas bloqueadas
-      for (const locked of lockedPieces) {
+      for (const locked of gameState.lockedPieces) {
         const lockedMatrix = new THREE.Matrix4()
         lockedMatrix.makeRotationFromEuler(locked.rotation)
 
@@ -166,12 +170,49 @@ export function Piece2() {
   }
 
   // Inicializar la primera pieza
-  if (!currentPiece) {
-    setCurrentPiece(createRandomPiece())
+  useEffect(() => {
+    if (!gameState.currentPiece && !gameState.isLocked) {
+      setGameState(prev => ({
+        ...prev,
+        currentPiece: createRandomPiece(prev.currentWall)
+      }))
+    }
+  }, [gameState.currentPiece, gameState.isLocked])
+
+  // Calcular el ángulo de doblado y transformación basado en la posición
+  const calculateBendTransform = (position, wall) => {
+    const threshold = 2.5 // Distancia desde la esquina donde comienza el doblado
+    const maxBend = Math.PI / 2 // 90 grados en radianes
+    let bendAxis = new THREE.Vector3(1, 0, 0) // Eje de rotación por defecto (X)
+    
+    // Calcular qué tan cerca está del suelo
+    const heightRatio = Math.max(0, Math.min(1, position.y / threshold))
+    const bendAmount = (1 - heightRatio) * maxBend
+    
+    // Ajustar el eje de rotación según la pared
+    switch(wall) {
+      case WALLS.FRONT:
+        bendAxis.set(1, 0, 0)
+        break
+      case WALLS.RIGHT:
+        bendAxis.set(0, 0, 1)
+        break
+      case WALLS.BACK:
+        bendAxis.set(-1, 0, 0)
+        break
+      case WALLS.LEFT:
+        bendAxis.set(0, 0, -1)
+        break
+    }
+    
+    return {
+      angle: bendAmount,
+      axis: bendAxis
+    }
   }
 
   useFrame((state, delta) => {
-    if (!currentPiece || !groupRef.current) return
+    if (!gameState.currentPiece || !groupRef.current || gameState.isLocked) return
 
     const keys = getKeys()
     const moveSpeed = 5 * delta
@@ -181,7 +222,7 @@ export function Piece2() {
     const newRotation = groupRef.current.rotation.clone()
 
     // Movimiento lateral según la pared actual
-    switch(currentWall) {
+    switch(gameState.currentWall) {
       case WALLS.FRONT:
       case WALLS.BACK:
         if (keys.left) newPosition.x -= moveSpeed
@@ -212,35 +253,47 @@ export function Piece2() {
     if (!checkCollision(newPosition)) {
       groupRef.current.position.copy(newPosition)
       groupRef.current.rotation.copy(newRotation)
+      
+      // Actualizar la transformación de doblado
+      const bendTransform = calculateBendTransform(newPosition, gameState.currentWall)
+      setGameState(prev => ({ 
+        ...prev, 
+        bendAngle: bendTransform.angle,
+        bendAxis: bendTransform.axis
+      }))
     } else {
-      if (newPosition.y !== groupRef.current.position.y && !isCollidingRef.current) {
-        isCollidingRef.current = true;
-        // Bloquear la pieza y crear una nueva
-        setLockedPieces(prev => [...prev, {
-          ...currentPiece,
-          position: groupRef.current.position.clone(),
-          rotation: groupRef.current.rotation.clone()
-        }])
-        
-        // Cambiar a la siguiente pared en sentido horario
-        setCurrentWall(prevWall => {
-          switch(prevWall) {
-            case WALLS.FRONT: return WALLS.RIGHT
-            case WALLS.RIGHT: return WALLS.BACK
-            case WALLS.BACK: return WALLS.LEFT
-            case WALLS.LEFT: return WALLS.FRONT
-            default: return WALLS.FRONT
-          }
-        })
-        
-        // Usar setTimeout para asegurar que la nueva pieza se cree después de que los estados se actualicen
+      if (newPosition.y !== groupRef.current.position.y) {
+        // Marcar como bloqueado para prevenir más actualizaciones
+        setGameState(prev => ({
+          ...prev,
+          isLocked: true,
+          lockedPieces: [
+            ...prev.lockedPieces,
+            {
+              ...prev.currentPiece,
+              position: groupRef.current.position.clone(),
+              rotation: groupRef.current.rotation.clone()
+            }
+          ],
+          currentPiece: null,
+          currentWall: (() => {
+            switch(prev.currentWall) {
+              case WALLS.FRONT: return WALLS.RIGHT
+              case WALLS.RIGHT: return WALLS.BACK
+              case WALLS.BACK: return WALLS.LEFT
+              case WALLS.LEFT: return WALLS.FRONT
+              default: return WALLS.FRONT
+            }
+          })()
+        }))
+
+        // Desbloquear después de un delay para permitir la siguiente pieza
         setTimeout(() => {
-          setCurrentPiece(createRandomPiece())
-          isCollidingRef.current = false
-        }, 0)
+          setGameState(prev => ({ ...prev, isLocked: false }))
+        }, 300)
       } else {
         // Si la colisión es lateral, mantener la posición anterior
-        switch(currentWall) {
+        switch(gameState.currentWall) {
           case WALLS.FRONT:
           case WALLS.BACK:
             newPosition.x = groupRef.current.position.x
@@ -259,11 +312,11 @@ export function Piece2() {
   return (
     <>
       {/* Renderizar piezas bloqueadas */}
-      {lockedPieces.map((piece, index) => (
+      {gameState.lockedPieces.map((piece, index) => (
         <group key={index} position={piece.position} rotation={piece.rotation}>
           {piece.shape.map((coords, blockIndex) => (
             <mesh key={blockIndex} position={coords}>
-              <boxGeometry args={[1, 1, 0.2]} />
+              <boxGeometry args={[1, 1, 0.01]} />
               <meshStandardMaterial color={piece.color} />
             </mesh>
           ))}
@@ -271,18 +324,33 @@ export function Piece2() {
       ))}
       
       {/* Renderizar pieza actual */}
-      {currentPiece && (
+      {gameState.currentPiece && (
         <group 
           ref={groupRef}
-          position={currentPiece.position}
-          rotation={currentPiece.rotation}
+          position={gameState.currentPiece.position}
+          rotation={gameState.currentPiece.rotation}
         >
-          {currentPiece.shape.map((coords, index) => (
-            <mesh key={index} position={coords}>
-              <boxGeometry args={[1, 1, 0.2]} />
-              <meshStandardMaterial color={currentPiece.color} />
-            </mesh>
-          ))}
+          {gameState.currentPiece.shape.map((coords, index) => {
+            // Crear una matriz de rotación para el doblado
+            const bendMatrix = new THREE.Matrix4()
+            if (gameState.bendAxis) {
+              bendMatrix.makeRotationAxis(
+                gameState.bendAxis,
+                gameState.bendAngle * Math.abs(coords[1]) / 2
+              )
+            }
+            
+            // Aplicar la transformación a la posición
+            const position = new THREE.Vector3(coords[0], coords[1], coords[2])
+            position.applyMatrix4(bendMatrix)
+            
+            return (
+              <mesh key={index} position={position}>
+                <boxGeometry args={[1, 1, 0.01]} />
+                <meshStandardMaterial color={gameState.currentPiece.color} />
+              </mesh>
+            )
+          })}
         </group>
       )}
     </>
